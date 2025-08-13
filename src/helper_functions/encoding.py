@@ -2,8 +2,24 @@ from typing import List  # For typing annotation.
 from qiskit.circuit import QuantumCircuit
 import torch  # Importing torch for tensor operations.
 import numpy as np
+import numpy as np
+from qiskit import QuantumCircuit
 
-def encode_circuit_into_input_embedding(qc: QuantumCircuit) -> torch.Tensor:
+# gate 集合對應 ID
+gate_type_dict = {
+    "cz": 0,
+    "id": 1,
+    "rx": 2,
+    "rz": 3,
+    "rzz": 4,
+    "sx": 5,
+    "x": 6
+}
+
+NO_QUBIT = -1  # 單比特閘第二個 qubit 填 -1
+    
+
+def encode_circuit_into_input_embedding(qc: QuantumCircuit, max_gates=20) -> torch.Tensor:
     """
     Encode (convert) the quantum circuit into a tensor representation for input to the agent.
 
@@ -22,39 +38,24 @@ def encode_circuit_into_input_embedding(qc: QuantumCircuit) -> torch.Tensor:
 
     其中param為旋轉角度（單位弧度），若無參數則None。
     """
-    # 定義gate類型對應的整數ID（可按需求擴充）
-    gate_type_dict = {
-    "CZ": 0,
-    "RX": 1,
-    "RZ": 2,
-    "RZZ": 3,
-    "SX": 4,
-    "X" : 5,
-    "id": 6
-    }
-    
-    # 最大gate數量（固定矩陣行數）
-    max_gates = 10
-
-    # 特殊值，表示無第二個量子位元（單體閘）
-    NO_QUBIT = -1
-
-    num_features = 4  # Gate_Type_ID, Qubit_1_ID, Qubit_2_ID, Parameter_Value
+    num_features = 4
     matrix = np.zeros((max_gates, num_features), dtype=float)
 
-    for i, gate in enumerate(gate_list):
+    # 從 Qiskit 物件讀出門
+    for i, instr in enumerate(qc.data):
         if i >= max_gates:
-            break  # 超過最大gate數則忽略
+            break
 
-        gate_type_id = gate_type_dict.get(gate["type"], -1)
-        qubit_1 = gate["qubits"][0]
-        qubit_2 = gate["qubits"][1] if len(gate["qubits"]) > 1 else NO_QUBIT
-        param = gate["param"] if gate["param"] is not None else 0.0
+        gate = instr[0].name.lower()
+        qargs = [q.index for q in instr[1]]
+        params = instr[0].params
 
-        matrix[i, 0] = gate_type_id
-        matrix[i, 1] = qubit_1
-        matrix[i, 2] = qubit_2
-        matrix[i, 3] = param
+        gate_type_id = gate_type_dict.get(gate, -1)  # -1 代表不在支援集合裡
+        qubit_1 = qargs[0] if len(qargs) >= 1 else NO_QUBIT
+        qubit_2 = qargs[1] if len(qargs) >= 2 else NO_QUBIT
+        param = params[0] if params else 0.0
+
+        matrix[i] = [gate_type_id, qubit_1, qubit_2, param]
 
     return matrix
 
