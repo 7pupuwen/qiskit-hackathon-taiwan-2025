@@ -88,16 +88,23 @@ class PPOAgent:
             probs (list): list of probability distribution(s) over action(s).
             value (float): the value from the Critic network.
         """
+        observation = observation.to(self.device)
+    
+        # 用 Actor 得到動作分布
+        gate_dist = self.actor(observation)
+    
+        # 從概率分布取樣一個動作
+        action = gate_dist.sample()
+    
+        # 動作的 log 機率（用於 PPO 計算 loss）
+        probs = gate_dist.log_prob(action)
+    
+        # 用 Critic 得到 state value
+        value = self.critic(observation)
+    
+        # 回傳時轉成普通 Python 類型（list / float），方便保存到 memory
+        return action.detach().cpu().tolist(), probs.detach().cpu().tolist(), value.item()
 
-        '''
-        Write your code here.
-        '''
-
-        action = []
-        probs = []
-        value = 0.0
-
-        return action, probs, value
 
     def store_transitions(self, state, action, reward, probs, vals, done):
         """
@@ -110,10 +117,49 @@ class PPOAgent:
         This method implements the learning step.
         """
 
-        '''
-        Write your code here.
-        '''
-
+        device = self.device
+        memory = self.memory_buffer
+    
+        for _ in range(self.num_epochs):
+            states, actions, rewards, old_probs, values, dones = memory.generate_batches()
+    
+            states = torch.tensor(states, dtype=torch.float).to(device)
+            actions = torch.tensor(actions).to(device)
+            rewards = torch.tensor(rewards).to(device)
+            old_probs = torch.tensor(old_probs).to(device)
+            values = torch.tensor(values).to(device)
+            dones = torch.tensor(dones).to(device)
+    
+            # 計算折扣回報和優勢
+            returns = []
+            discounted_reward = 0
+            for reward, is_terminal in zip(reversed(rewards), reversed(dones)):
+                if is_terminal:
+                    discounted_reward = 0
+                discounted_reward = reward + self.gamma * discounted_reward
+                returns.insert(0, discounted_reward)
+            returns = torch.tensor(returns).to(device)
+            advantages = returns - values
+    
+            gate_dists = self.actor(states)
+            new_probs = gate_dists.log_prob(actions)
+    
+            prob_ratio = (new_probs - old_probs).exp()
+    
+            weighted_probs = advantages * prob_ratio
+            clipped_probs = advantages * torch.clamp(prob_ratio, 1 - self.policy_clip, 1 + self.policy_clip)
+            actor_loss = -torch.min(weighted_probs, clipped_probs).mean()
+    
+            critic_loss = F.mse_loss(self.critic(states).squeeze(), returns)
+    
+            total_loss = actor_loss + 0.5 * critic_loss
+    
+            self.actor_optimizer.zero_grad()
+            self.critic_optimizer.zero_grad()
+            total_loss.backward()
+            self.actor_optimizer.step()
+            self.critic_optimizer.step()
+    
         pass
 
     def save_models(self):
