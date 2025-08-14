@@ -290,6 +290,7 @@ class VQEnv(gym.Env):
         return expectation_value
 
     def compute_reward(self):
+    def compute_reward(self, ansatz: QuantumCircuit, params: Union[np.ndarray, torch.Tensor]) -> float:
         """
         Computes the reward for a given circuit.
 
@@ -298,11 +299,18 @@ class VQEnv(gym.Env):
 
         Returns:
             reward (float): the reward value.
+         計算給定 ansatz 和參數的哈密頓期望值，並轉成獎勵值。
+        以負期望能量作為獎勵，越低能量獎勵越高。
+        可加入對電路深度的簡單懲罰促使電路更簡潔。
         """
-
-        '''
-        Write your code here.
-        '''
+         hamiltonian = self.qubit_operator
+        expectation_value = self.compute_expectation_value(ansatz, hamiltonian, params)
+    
+        # 範例：獎勵為負期望值減去電路深度懲罰（depth * 0.01）
+        depth_penalty = 0.01 * ansatz.depth()
+        reward = -expectation_value - depth_penalty
+    
+        return reward
 
         pass
 
@@ -351,6 +359,29 @@ class VQEnv(gym.Env):
         # Update counter
         self.counter += 1
 
+        # 1. 解碼 action 成量子電路
+        ansatz = decode_actions_into_circuit(action, num_qubits=self.num_qubits)
+        
+        # 2. 計算期望能量
+        # 提示：若 ansatz 需要參數，可自訂參數或使用固定值（這裡假設無參數）
+        params = []  # 空列表或預設參數，可依需求調整
+        energy = self.compute_expectation_value(ansatz, self.qubit_operator, params)
+        
+        # 3. 計算 reward
+        self.reward = self.compute_reward(ansatz, params)
+        
+        # 4. 編碼電路為 state
+        self.new_state = encode_circuit_into_input_embedding(ansatz, max_gates=self.max_circuit_depth)
+        
+        # 5. 判斷是否終止或截斷
+        self.terminated = (abs(energy - self.fci_energy) < self.conv_tol) or (self.counter >= self.max_steps_per_episode)
+        self.truncated = (self.counter >= self.max_steps_per_episode)
+        
+        # 6. 更新 info
+        self.info['ep_energy'].append(energy)
+        self.info['ep_reward'].append(self.reward)
+        
+        return self.new_state, self.reward, self.terminated, self.truncated, self.info
         '''
         Write your code here.
 
