@@ -12,18 +12,7 @@ GATE_ID_TO_NAME = {
     6: "x"
 }
 
-def decode_actions_into_circuit(actions: List) -> QuantumCircuit:
-    """ 
-    Decode the actions taken by the agent into quantum circuit operations.
-
-    Args:
-        actions (List): A list of actions taken by the agent, where each action corresponds to a gate operation.
-
-    Returns:
-        qc (QuantumCircuit): A quantum circuit constructed based on the agent's actions.
-    """
-
-    
+def decode_actions_into_circuit(actions: List, num_qubits: int = None) -> QuantumCircuit:
     if isinstance(actions, torch.Tensor):
         actions = actions.cpu().numpy()
 
@@ -42,23 +31,25 @@ def decode_actions_into_circuit(actions: List) -> QuantumCircuit:
         q2 = int(q2)
         param = float(param)
 
-        # 不合法 gate id 跳過
         if gate_id not in GATE_ID_TO_NAME:
             continue
 
         gate_name = GATE_ID_TO_NAME[gate_id]
 
-        # 依不同 gate 呼叫 Qiskit API
+        # 新增避免 duplicate qubit 的檢查
+        if gate_name in ["cz", "rzz"] and q1 == q2:
+            # 同一個 qubit 做兩個位置，跳過該動作
+            continue
+
+        # 其餘依序執行
         if gate_name == "rx":
             qc.rx(param, q1)
         elif gate_name == "rz":
             qc.rz(param, q1)
-        elif gate_name == "rzz":
-            if q2 >= 0:
-                qc.rzz(param, q1, q2)
-        elif gate_name == "cz":
-            if q2 >= 0:
-                qc.cz(q1, q2)
+        elif gate_name == "rzz" and q2 >= 0:
+            qc.rzz(param, q1, q2)
+        elif gate_name == "cz" and q2 >= 0:
+            qc.cz(q1, q2)
         elif gate_name == "sx":
             qc.sx(q1)
         elif gate_name == "x":
@@ -67,6 +58,5 @@ def decode_actions_into_circuit(actions: List) -> QuantumCircuit:
             qc.id(q1)
 
     return qc
-    
 
     pass
