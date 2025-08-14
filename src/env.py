@@ -289,7 +289,7 @@ class VQEnv(gym.Env):
 
         return expectation_value
 
-    def compute_reward(self):
+    # def compute_reward(self):
     def compute_reward(self, ansatz: QuantumCircuit, params: Union[np.ndarray, torch.Tensor]) -> float:
         """
         Computes the reward for a given circuit.
@@ -303,7 +303,7 @@ class VQEnv(gym.Env):
         以負期望能量作為獎勵，越低能量獎勵越高。
         可加入對電路深度的簡單懲罰促使電路更簡潔。
         """
-         hamiltonian = self.qubit_operator
+        hamiltonian = self.qubit_operator
         expectation_value = self.compute_expectation_value(ansatz, hamiltonian, params)
     
         # 範例：獎勵為負期望值減去電路深度懲罰（depth * 0.01）
