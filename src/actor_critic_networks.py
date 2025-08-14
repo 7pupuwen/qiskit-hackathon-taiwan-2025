@@ -17,9 +17,12 @@ class ActorNetwork(nn.Module):
         # Run the constructor of the parent class (nn.Module):
         super().__init__()
 
-        '''
-        Write your code here.
-        '''
+        # 隱藏層設定
+        self.fc1 = nn.Linear(state_dim, 128)
+        self.fc2 = nn.Linear(128, 128)
+
+        # 輸出層: action_dim 個 logits（用於 Categorical 分布）
+        self.output_layer = nn.Linear(128, action_dim)
 
         # Example:
         num_gate_types = action_dim
@@ -32,9 +35,21 @@ class ActorNetwork(nn.Module):
         Forward pass.
         """
 
-        '''
-        Write your code here.
-        '''
+        # 保證 state 是 float tensor
+        if not torch.is_floating_point(state):
+            state = state.float()
+
+        # 前向運算
+        x = F.relu(self.fc1(state))
+        x = F.relu(self.fc2(x))
+
+        # 輸出 logits（未經 softmax）
+        gate_logits = self.output_layer(x)
+
+        # 用 logits 建立離散分布（內建 softmax）
+        gate_dist = dist.Categorical(logits=gate_logits)
+
+        return gate_dist
         
         # Example:
         x = F.relu(self.fc1(state))
