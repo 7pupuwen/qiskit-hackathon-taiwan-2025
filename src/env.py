@@ -366,16 +366,22 @@ class VQEnv(gym.Env):
         # 提示：若 ansatz 需要參數，可自訂參數或使用固定值（這裡假設無參數）
         params = []  # 空列表或預設參數，可依需求調整
         energy = self.compute_expectation_value(ansatz, self.qubit_operator, params)
-        
+
+        if abs(energy - self.fci_energy) < self.conv_tol:
+            self.terminated = True
+        else:
+            self.terminated = False
         # 3. 計算 reward
-        self.reward = self.compute_reward(ansatz, params)
+        # self.reward = self.compute_reward(ansatz, params)
+        depth_penalty = 0.01 * ansatz.depth()
+        self.reward = -energy - depth_penalty
         
         # 4. 編碼電路為 state
         self.new_state = encode_circuit_into_input_embedding(ansatz, max_gates=self.max_circuit_depth)
         
         # 5. 判斷是否終止或截斷
-        self.terminated = (abs(energy - self.fci_energy) < self.conv_tol) or (self.counter >= self.max_steps_per_episode)
-        self.truncated = (self.counter >= self.max_steps_per_episode)
+        self.terminated = abs(energy - self.fci_energy) < self.conv_tol
+        self.truncated = self.counter >= self.max_steps_per_episode
         
         # 6. 更新 info
         self.info['ep_energy'].append(energy)
