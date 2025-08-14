@@ -3,6 +3,9 @@ import numpy as np # Numerical operations.
 import ast # Convert string to list.
 import sys # Command-line arguments.
 import os # Directories.
+import csv
+from collections import deque
+import torch
 
 # Helper functions:
 #from src.helper_functions.save_qubit_op import save_qubit_op_to_file
@@ -110,47 +113,66 @@ if __name__ == '__main__':
         chkpt_dir = 'model/ppo')
 
     # Training loop:
+
+    # CSV 檔案名稱
+    csv_file_path = 'training_log.csv'
+    
+    # 初始化記錄用 deque（最近 100 回合）
+    recent_rewards = deque(maxlen=100)
+    recent_successes = deque(maxlen=100)
+    
+    # CSV 檔案欄位
+    csv_fields = ['Episode', 'TotalReward', 'FinalEnergy', 'Success', 'AvgReward100', 'SuccessRate100']
+    
+    # 先建立 CSV 檔並寫入表頭
+    with open(csv_file_path, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(csv_fields)
+    
     for episode in range(num_episodes):
-        # reset() 會回傳 (state, info)
         observation, info = env.reset()
         terminated = False
         truncated = False
         ep_reward = 0.0
     
         while not (terminated or truncated):
-            # 1️. 轉成 tensor，加 batch 維度，送到 PPOAgent 的 device
             state_tensor = torch.tensor(observation, dtype=torch.float32).unsqueeze(0).to(agent.device)
-    
-            # 2️. 用 actor 選動作
             action, probs, value = agent.sample_action(state_tensor)
-    
-            # 3️. 與環境互動
             new_observation, reward, terminated, truncated, info = env.step(action)
-    
-            # 4️. 儲存 transition
             agent.store_transitions(observation, action, reward, probs, value, terminated)
-    
-            # 5️. 更新觀測值
             observation = new_observation
-    
-            # 6️. 累積回合總獎勵
             ep_reward += reward
     
-            # 7️. 如果記憶體達批次大小，馬上更新一次
             if agent.memory_buffer.ready():
                 agent.learn()
     
-        # 回合結束後再學一次，確保還有殘留數據會被用掉
         if agent.memory_buffer.has_data():
             agent.learn()
     
-        # 打印回合資訊
         last_energy = info['ep_energy'][-1] if info['ep_energy'] else None
+        success_flag = 1 if terminated else 0
+    
+        # 更新最近回合數據
+        recent_rewards.append(ep_reward)
+        recent_successes.append(success_flag)
+    
+        # 計算最近 100 回合平均獎勵及成功率
+        avg_reward = sum(recent_rewards) / len(recent_rewards)
+        success_rate = (sum(recent_successes) / len(recent_successes)) * 100
+    
+        # 輸出訓練狀態
         print(f"[Episode {episode+1}/{num_episodes}] Reward: {ep_reward:.4f}, "
-              f"Final Energy: {last_energy:.6f} "
-              f"({'SUCCESS' if terminated else 'TIMEOUT'})")
+              f"Final Energy: {last_energy:.6f}, "
+              f"({'SUCCESS' if terminated else 'TIMEOUT'}) | "
+              f"AvgReward(100ep): {avg_reward:.4f}, SuccessRate(100ep): {success_rate:.1f}%")
+    
+        # 寫入 CSV
+        with open(csv_file_path, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([episode+1, ep_reward, last_energy, success_flag, avg_reward, success_rate])
     
         # 定期存檔
         if (episode + 1) % 50 == 0:
             agent.save_models()
     
+        
