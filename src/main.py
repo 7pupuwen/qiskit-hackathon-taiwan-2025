@@ -110,42 +110,47 @@ if __name__ == '__main__':
         chkpt_dir = 'model/ppo')
 
     # Training loop:
-    for i in range(num_episodes):
-    observation, info = env.reset()  # 重置環境，得到初始狀態(state)和附加資訊(info)
-    done = False
-    truncated = False
-    ep_reward = 0.0
-
-    while not (done or truncated):
-        # 1. 將 observation 轉成 tensor (浮點數、batch size = 1)
-        state_tensor = torch.tensor(observation, dtype=torch.float32).unsqueeze(0).to(agent.device)
-
-        # 2. 呼叫 agent 的 sample_action，取得動作、對應機率、state價值
-        action, probs, value = agent.sample_action(state_tensor)
-
-        # 3. 對環境執行該動作，得到新狀態、獎勵、是否終止、截斷、附加資訊
-        new_observation, reward, done, truncated, info = env.step(action)
-
-        # 4. 將當前 transition (state, action, reward, probs, value, done) 存入記憶體
-        agent.store_transitions(observation, action, reward, probs, value, done)
-
-        # 5. 更新狀態
-        observation = new_observation
-
-        # 6. 累積回合獎勵
-        ep_reward += reward
-
-        # 7. 如果記憶體達到 batch size，執行學習更新
-        if agent.memory_buffer.ready():
+    for episode in range(num_episodes):
+        # reset() 會回傳 (state, info)
+        observation, info = env.reset()
+        terminated = False
+        truncated = False
+        ep_reward = 0.0
+    
+        while not (terminated or truncated):
+            # 1️. 轉成 tensor，加 batch 維度，送到 PPOAgent 的 device
+            state_tensor = torch.tensor(observation, dtype=torch.float32).unsqueeze(0).to(agent.device)
+    
+            # 2️. 用 actor 選動作
+            action, probs, value = agent.sample_action(state_tensor)
+    
+            # 3️. 與環境互動
+            new_observation, reward, terminated, truncated, info = env.step(action)
+    
+            # 4️. 儲存 transition
+            agent.store_transitions(observation, action, reward, probs, value, terminated)
+    
+            # 5️. 更新觀測值
+            observation = new_observation
+    
+            # 6️. 累積回合總獎勵
+            ep_reward += reward
+    
+            # 7️. 如果記憶體達批次大小，馬上更新一次
+            if agent.memory_buffer.ready():
+                agent.learn()
+    
+        # 回合結束後再學一次，確保還有殘留數據會被用掉
+        if agent.memory_buffer.has_data():
             agent.learn()
-
-    # 每回合結束後也可呼叫學習，確保全部數據都被用到
-    if agent.memory_buffer.has_data():
-        agent.learn()
-
-    # 印出該回合結果，方便觀察訓練進度
-    print(f"Episode {i+1}/{num_episodes}, Total Reward: {ep_reward:.4f}, Last Energy: {info['ep_energy'][-1]:.6f}")
-
-    # 可視需要定期儲存模型
-    if (i + 1) % 100 == 0:
-        agent.save_models()
+    
+        # 打印回合資訊
+        last_energy = info['ep_energy'][-1] if info['ep_energy'] else None
+        print(f"[Episode {episode+1}/{num_episodes}] Reward: {ep_reward:.4f}, "
+              f"Final Energy: {last_energy:.6f} "
+              f"({'SUCCESS' if terminated else 'TIMEOUT'})")
+    
+        # 定期存檔
+        if (episode + 1) % 50 == 0:
+            agent.save_models()
+    
