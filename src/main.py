@@ -111,8 +111,41 @@ if __name__ == '__main__':
 
     # Training loop:
     for i in range(num_episodes):
-        observation = env.reset()
-        '''
-        Write your code here.
-        '''
-        break
+    observation, info = env.reset()  # 重置環境，得到初始狀態(state)和附加資訊(info)
+    done = False
+    truncated = False
+    ep_reward = 0.0
+
+    while not (done or truncated):
+        # 1. 將 observation 轉成 tensor (浮點數、batch size = 1)
+        state_tensor = torch.tensor(observation, dtype=torch.float32).unsqueeze(0).to(agent.device)
+
+        # 2. 呼叫 agent 的 sample_action，取得動作、對應機率、state價值
+        action, probs, value = agent.sample_action(state_tensor)
+
+        # 3. 對環境執行該動作，得到新狀態、獎勵、是否終止、截斷、附加資訊
+        new_observation, reward, done, truncated, info = env.step(action)
+
+        # 4. 將當前 transition (state, action, reward, probs, value, done) 存入記憶體
+        agent.store_transitions(observation, action, reward, probs, value, done)
+
+        # 5. 更新狀態
+        observation = new_observation
+
+        # 6. 累積回合獎勵
+        ep_reward += reward
+
+        # 7. 如果記憶體達到 batch size，執行學習更新
+        if agent.memory_buffer.ready():
+            agent.learn()
+
+    # 每回合結束後也可呼叫學習，確保全部數據都被用到
+    if agent.memory_buffer.has_data():
+        agent.learn()
+
+    # 印出該回合結果，方便觀察訓練進度
+    print(f"Episode {i+1}/{num_episodes}, Total Reward: {ep_reward:.4f}, Last Energy: {info['ep_energy'][-1]:.6f}")
+
+    # 可視需要定期儲存模型
+    if (i + 1) % 100 == 0:
+        agent.save_models()
